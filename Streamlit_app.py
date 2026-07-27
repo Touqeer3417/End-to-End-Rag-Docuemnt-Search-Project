@@ -15,13 +15,22 @@ sys.path.append(str(Path(__file__).parent))
 
 
 def load_css():
-    """Load CSS from external file and inject into Streamlit"""
-    css_path = Path(__file__).parent / "assets" / "style.css"
-    try:
-        css_content = css_path.read_text(encoding="utf-8")
-        st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
-    except FileNotFoundError:
-        st.warning("⚠️ CSS file not found! Make sure 'assets/style.css' exists.")
+    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    possible_paths = [
+        script_dir / "assets" / "style.css",      # Same folder
+        script_dir / "style.css",                  # Root mein
+        script_dir / ".." / "assets" / "style.css", # Parent folder
+        Path("assets") / "style.css",               # CWD se
+        Path(os.getcwd()) / "assets" / "style.css", # Absolute CWD
+    ]
+    
+    for path in possible_paths:
+        if path.resolve().exists():
+            css_content = path.read_text(encoding="utf-8")
+            st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
+            return
+    
+    st.warning("⚠️ CSS file not found! Make sure 'assets/style.css' exists.")
 
 
 
