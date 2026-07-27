@@ -35,7 +35,7 @@ def load_css():
 
 
 st.set_page_config(
-    page_title="Neural RAG | AI Document Intelligence",
+    page_title=" AI Document Intelligence",
     page_icon="🧠",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -121,12 +121,8 @@ def main():
     st.markdown("""
         <div class="hero-container">
             <div class="hero-emoji">🧠</div>
-            <div class="hero-title">Neural RAG</div>
-            <div class="hero-subtitle">Intelligent Document Intelligence Engine</div>
-            <div class="hero-badge">
-                <div class="pulse-dot"></div>
-                <span>System Online</span>
-            </div>
+            <div class="hero-title">Intelligent Document Intelligence Engine</div>
+          
         </div>
     """, unsafe_allow_html=True)
 
