@@ -515,6 +515,7 @@ div[data-testid="stSpinner"] {
     border-radius: 50%;
     pointer-events: none;
     box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
+    
 }
 
 /* ─── Hide Defaults ─── */
