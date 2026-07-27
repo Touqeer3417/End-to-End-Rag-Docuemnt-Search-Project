@@ -7,7 +7,7 @@ from langchain_core.documents import Document
 
 class VectorStore:
     def __init__(self):
-        self.embedding = OpenAIEmbeddings()
+        self.embedding = OpenAIEmbeddings( model="text-embedding-3-small")
         self.vectorstore = None
         self.retriever = None
     

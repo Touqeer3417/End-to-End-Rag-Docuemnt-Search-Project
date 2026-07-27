@@ -10,3 +10,5 @@ class RAGState(BaseModel):
     question: str
     retrieved_docs: List[Document] = []
     answer: str = ""
+    web_search_needed: bool = False
+    rewritten_query: str = ""

@@ -1,153 +1,252 @@
-"""Streamlit UI for Agentic RAG System - Simplified Version"""
 import os
-
-os.environ["USER_AGENT"] = "Touqeer-RAG-App/1.0"
 import streamlit as st
 from pathlib import Path
 import sys
 import time
-
-# Add src to path
-sys.path.append(str(Path(__file__).parent))
-
+from datetime import datetime
 from src.config.config import Config
 from src.document_ingestion.document_processor import DocumentProcessor
 from src.vectorstore.vectorStore import VectorStore
 from src.graph_builder.graph_builder import GraphBuilder
 
-# Page configuration
+os.environ["USER_AGENT"] = "Touqeer-RAG-App/1.0"
+sys.path.append(str(Path(__file__).parent))
+
+
+
+def load_css():
+    """Load CSS from external file and inject into Streamlit"""
+    css_path = Path(__file__).parent / "assets" / "style.css"
+    try:
+        css_content = css_path.read_text(encoding="utf-8")
+        st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.warning("⚠️ CSS file not found! Make sure 'assets/style.css' exists.")
+
+
+
 st.set_page_config(
-    page_title="🤖 RAG Search",
-    page_icon="🔍",
-    layout="centered"
+    page_title="Neural RAG | AI Document Intelligence",
+    page_icon="🧠",
+    layout="centered",
+    initial_sidebar_state="collapsed"
 )
 
-# Simple CSS
-st.markdown("""
-    <style>
-    .stButton > button {
-        width: 100%;
-        background-color: #4CAF50;
-        color: white;
-        font-weight: bold;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# Load external CSS
+load_css()
 
+
+# ═══════════════════════════════════════════════════════════════
+# SESSION STATE
+# ═══════════════════════════════════════════════════════════════
 def init_session_state():
-    """Initialize session state variables"""
     if 'rag_system' not in st.session_state:
         st.session_state.rag_system = None
     if 'initialized' not in st.session_state:
         st.session_state.initialized = False
     if 'history' not in st.session_state:
         st.session_state.history = []
+    if 'total_chunks' not in st.session_state:
+        st.session_state.total_chunks = 0
 
-@st.cache_resource
+
+
+@st.cache_resource(show_spinner=False)
 def initialize_rag():
-    """Initialize the RAG system (cached)"""
     try:
-        # Initialize components
         llm = Config.get_llm()
         doc_processor = DocumentProcessor(
             chunk_size=Config.CHUNK_SIZE,
             chunk_overlap=Config.CHUNK_OVERLAP
         )
         vector_store = VectorStore()
-        
-        # Use default URLs
         urls = Config.DEFAULT_URLS
-        
-        # Process documents
         documents = doc_processor.process_urls(urls)
-        
-        # Create vector store
         vector_store.create_vectorstore(documents)
-        
-        # Build graph
+
         graph_builder = GraphBuilder(
             retriever=vector_store.get_retriever(),
             llm=llm
         )
         graph_builder.build()
-        
+
         return graph_builder, len(documents)
     except Exception as e:
         st.error(f"Failed to initialize: {str(e)}")
         return None, 0
 
+
+
+def render_particles():
+    particles_html = ""
+    for i in range(20):
+        left = (i * 5.3) % 100
+        top = (i * 7.7) % 100
+        delay = (i * 0.4) % 6
+        duration = 5 + (i % 5)
+        size = 2 + (i % 4)
+        opacity = 0.2 + (i % 3) * 0.15
+        particles_html += f'''
+            <div class="particle" style="
+                left:{left}%;
+                top:{top}%;
+                width:{size}px;
+                height:{size}px;
+                animation-delay:{delay}s;
+                animation-duration:{duration}s;
+                opacity:{opacity};
+                animation: float {duration}s ease-in-out infinite;
+            "></div>
+        '''
+    st.markdown(particles_html, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN APP
+# ═══════════════════════════════════════════════════════════════
 def main():
-    """Main application"""
     init_session_state()
-    
-    # Title
-    st.title("🔍 RAG Document Search")
-    st.markdown("Ask questions about the loaded documents")
-    
-    # Initialize system
+    render_particles()
+
+    # ─── Hero Section ───
+    st.markdown("""
+        <div class="hero-container">
+            <div class="hero-emoji">🧠</div>
+            <div class="hero-title">Neural RAG</div>
+            <div class="hero-subtitle">Intelligent Document Intelligence Engine</div>
+            <div class="hero-badge">
+                <div class="pulse-dot"></div>
+                <span>System Online</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ─── Initialize ───
     if not st.session_state.initialized:
-        with st.spinner("Loading system..."):
+        with st.spinner("⚡ Initializing Neural Engine..."):
             rag_system, num_chunks = initialize_rag()
             if rag_system:
                 st.session_state.rag_system = rag_system
+                st.session_state.total_chunks = num_chunks
                 st.session_state.initialized = True
-                st.success(f"✅ System ready! ({num_chunks} document chunks loaded)")
-    
-    st.markdown("---")
-    
-    # Search interface
-    with st.form("search_form"):
+                st.success(f"🚀 Engine Ready — {num_chunks:,} document chunks indexed")
+                time.sleep(0.5)
+                st.rerun()
+
+    # ─── Status Bar ───
+    if st.session_state.initialized:
+        st.markdown(f"""
+            <div class="status-bar">
+                <div class="status-item">
+                    <span class="status-icon">📚</span>
+                    <span><span class="status-value">{st.session_state.total_chunks:,}</span> Chunks</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">⚡</span>
+                    <span><span class="status-value">Active</span> Engine</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-icon">🎯</span>
+                    <span><span class="status-value">{len(st.session_state.history)}</span> Queries</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown('<div class="fancy-divider"></div>', unsafe_allow_html=True)
+
+    # ─── Search Form ───
+    with st.form("search_form", clear_on_submit=False):
         question = st.text_input(
-            "Enter your question:",
-            placeholder="What would you like to know?"
+            "",
+            placeholder="Ask anything about your documents...",
+            label_visibility="collapsed"
         )
-        submit = st.form_submit_button("🔍 Search")
-    
-    # Process search
-    if submit and question:
-        if st.session_state.rag_system:
-            with st.spinner("Searching..."):
-                start_time = time.time()
-                
-                # Get answer
-                result = st.session_state.rag_system.run(question)
-                
-                elapsed_time = time.time() - start_time
-                
-                # Add to history
-                st.session_state.history.append({
-                    'question': question,
-                    'answer': result['answer'],
-                    'time': elapsed_time
-                })
-                
-                # Display answer
-                st.markdown("### 💡 Answer")
-                st.success(result['answer'])
-                
-                # Show retrieved docs in expander
-                with st.expander("📄 Source Documents"):
-                    for i, doc in enumerate(result['retrieved_docs'], 1):
-                        st.text_area(
-                            f"Document {i}",
-                            doc.page_content[:300] + "...",
-                            height=100,
-                            disabled=True
-                        )
-                
-                st.caption(f"⏱️ Response time: {elapsed_time:.2f} seconds")
-    
-    # Show history
+        submit = st.form_submit_button("🔍 Search Documents")
+
+    # ─── Process Search ───
+    if submit and question and st.session_state.rag_system:
+        start_time = time.time()
+        answer_placeholder = st.empty()
+        answer_text = ""
+
+        # Streaming answer
+        for msg_chunk, metadata in st.session_state.rag_system.stream(question):
+            if metadata.get("langgraph_node") == "responder":
+                token = msg_chunk.content
+                if token:
+                    answer_text += token
+                    answer_placeholder.markdown(f"""
+                        <div class="answer-wrapper">
+                            <div class="answer-header">
+                                <span class="answer-icon">✨</span>
+                                <span class="answer-label">Generated Answer</span>
+                            </div>
+                            <div class="answer-text">{answer_text}▌</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+        elapsed_time = time.time() - start_time
+
+        # Final answer with meta
+        answer_placeholder.markdown(f"""
+            <div class="answer-wrapper">
+                <div class="answer-header">
+                    <span class="answer-icon">✨</span>
+                    <span class="answer-label">Generated Answer</span>
+                </div>
+                <div class="answer-text">{answer_text}</div>
+                <div class="meta-bar">
+                    <div class="meta-time">⏱️ Generated in {elapsed_time:.2f}s</div>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Save to history
+        st.session_state.history.append({
+            'question': question,
+            'answer': answer_text,
+            'time': elapsed_time,
+            'timestamp': datetime.now().strftime("%H:%M")
+        })
+
+    elif submit and not st.session_state.rag_system:
+        st.error("⚠️ System not initialized. Please refresh the page.")
+
+    # ─── History Section ───
     if st.session_state.history:
-        st.markdown("---")
-        st.markdown("### 📜 Recent Searches")
-        
-        for item in reversed(st.session_state.history[-3:]):  # Show last 3
-            with st.container():
-                st.markdown(f"**Q:** {item['question']}")
-                st.markdown(f"**A:** {item['answer'][:200]}...")
-                st.caption(f"Time: {item['time']:.2f}s")
-                st.markdown("")
+        st.markdown('<div class="fancy-divider"></div>', unsafe_allow_html=True)
+
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown('<div class="history-title">📜 Recent Queries</div>', unsafe_allow_html=True)
+        with col2:
+            st.markdown('<div style="text-align:right;">', unsafe_allow_html=True)
+            if st.button("🗑️ Clear", key="clear_history", help="Clear all history"):
+                st.session_state.history = []
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        for item in reversed(st.session_state.history[-5:]):
+            st.markdown(f"""
+                <div class="history-card">
+                    <div class="history-question">❓ {item['question']}</div>
+                    <div class="history-answer">{item['answer']}</div>
+                    <div class="history-footer">
+                        <div class="history-time">🕐 {item.get('timestamp', 'Now')}</div>
+                        <div class="history-speed">⚡ {item['time']:.2f}s</div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+    else:
+        # Empty state
+        st.markdown("""
+            <div class="empty-state">
+                <div class="empty-icon">🔮</div>
+                <div class="empty-text">Your search history will appear here</div>
+            </div>
+        """, unsafe_allow_html=True)
+
 
 if __name__ == "__main__":
     main()
