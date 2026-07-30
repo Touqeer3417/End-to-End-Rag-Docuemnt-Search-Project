@@ -28,7 +28,7 @@
 /* ─── Hero Section ─── */
 .hero-container {
     text-align: center;
-    padding: 2.5rem 0 1.5rem 0;
+    /* padding: 2.5rem 0 1.5rem 0; */
     position: relative;
 }
 

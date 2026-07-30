@@ -14,7 +14,7 @@ class VectorStore:
     def create_vectorstore(self, documents: List[Document]):
        
         self.vectorstore = FAISS.from_documents(documents, self.embedding)
-        self.retriever = self.vectorstore.as_retriever()
+        self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
     
     def get_retriever(self):
      

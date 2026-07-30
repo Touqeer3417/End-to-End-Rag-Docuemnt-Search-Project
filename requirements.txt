@@ -13,3 +13,4 @@ pypdf
 wikipedia
 langchain-groq
 langchain-tavily
+langsmith

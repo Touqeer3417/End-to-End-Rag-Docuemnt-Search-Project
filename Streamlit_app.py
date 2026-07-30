@@ -8,6 +8,18 @@ from src.config.config import Config
 from src.document_ingestion.document_processor import DocumentProcessor
 from src.vectorstore.vectorStore import VectorStore
 from src.graph_builder.graph_builder import GraphBuilder
+from langsmith import wrappers
+from dotenv import load_dotenv
+from langchain_core.runnables import RunnableConfig
+
+# ═══════════════════════════════════════════════════════════════
+# NEW IMPORTS FOR PDF LOADING
+# ═══════════════════════════════════════════════════════════════
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+load_dotenv() 
+
 
 os.environ["USER_AGENT"] = "Touqeer-RAG-App/1.0"
 sys.path.append(str(Path(__file__).parent))
@@ -69,8 +81,33 @@ def initialize_rag():
             chunk_overlap=Config.CHUNK_OVERLAP
         )
         vector_store = VectorStore()
+        
+        # ─── Process URLs ───
         urls = Config.DEFAULT_URLS
         documents = doc_processor.process_urls(urls)
+        
+        # ═══════════════════════════════════════════════════════════════
+        # NEW: LOAD PDF FROM data FOLDER
+        # ═══════════════════════════════════════════════════════════════
+        pdf_path = Path("data/attention.pdf")
+        if pdf_path.exists():
+            # Load PDF pages
+            pdf_loader = PyPDFLoader(str(pdf_path))
+            pdf_docs = pdf_loader.load()
+            
+            # Chunk PDF using same config parameters
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=Config.CHUNK_SIZE,
+                chunk_overlap=Config.CHUNK_OVERLAP
+            )
+            pdf_chunks = text_splitter.split_documents(pdf_docs)
+            
+            # Merge with URL documents
+            documents.extend(pdf_chunks)
+        else:
+            st.warning("⚠️ data/attention.pdf not found! Skipping PDF ingestion.")
+        
+        # Create vector store with combined documents
         vector_store.create_vectorstore(documents)
 
         graph_builder = GraphBuilder(
@@ -138,31 +175,12 @@ def main():
                 time.sleep(0.5)
                 st.rerun()
 
-    # ─── Status Bar ───
-    if st.session_state.initialized:
-        st.markdown(f"""
-            <div class="status-bar">
-                <div class="status-item">
-                    <span class="status-icon">📚</span>
-                    <span><span class="status-value">{st.session_state.total_chunks:,}</span> Chunks</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-icon">⚡</span>
-                    <span><span class="status-value">Active</span> Engine</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-icon">🎯</span>
-                    <span><span class="status-value">{len(st.session_state.history)}</span> Queries</span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
     st.markdown('<div class="fancy-divider"></div>', unsafe_allow_html=True)
 
     # ─── Search Form ───
     with st.form("search_form", clear_on_submit=False):
         question = st.text_input(
-            "",
+            "Ask a Question  ",
             placeholder="Ask anything about your documents...",
             label_visibility="collapsed"
         )
@@ -174,8 +192,17 @@ def main():
         answer_placeholder = st.empty()
         answer_text = ""
 
+        run_config = RunnableConfig(
+            metadata={
+                "environment": "production",
+                "app_version": "1.0.0",
+                "user_id": st.session_state.get("user_id", "anonymous"),
+                "session_id": st.session_state.get("session_id", "default"),
+            }
+        )
+
         # Streaming answer
-        for msg_chunk, metadata in st.session_state.rag_system.stream(question):
+        for msg_chunk, metadata in st.session_state.rag_system.stream(question, config=run_config):
             if metadata.get("langgraph_node") == "responder":
                 token = msg_chunk.content
                 if token:
