@@ -17,3 +17,7 @@ langsmith
 langchain-qdrant
 qdrant-client
 pyperclip
+fastembed>=0.4.0
+cohere>=5.0.0                    # Cohere reranker (needs COHERE_API_KEY)
+sentence-transformers>=3.0.0     # Local BGE cross-encoder reranker
+langchain-huggingface

@@ -15,6 +15,8 @@ class Config:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # For evaluation judge
+    HF_TOKEN = os.getenv("HF_TOKEN")
+
 
     QDRANT_URL: str = os.getenv("QDRANT_URL", "")
     QDRANT_API_KEY: str = os.getenv("QDRANT_API_KEY", "")

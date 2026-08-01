@@ -6,16 +6,22 @@ import time
 from datetime import datetime
 from src.config.config import Config
 from src.document_ingestion.document_processor import DocumentProcessor
-from src.vectorstore.vectorStore import VectorStore
+# from src.vectorstore.vectorStore import VectorStore
+from src.vectorstore.HybridVectorStore import VectorStore
 from src.graph_builder.graph_builder import GraphBuilder
 from langsmith import wrappers
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
-os.environ["USER_AGENT"] = "Touqeer-RAG-App/1.0" 
+os.environ["USER_AGENT"] = "my-rag-app/1.0"
+from dotenv import load_dotenv
+load_dotenv()
+HF_TOKEN = os.getenv("HF_TOKEN")
+
 
 # ═══════════════════════════
 # NEW IMPORTS FOR PDF LOADING
 # ═══════════════════════════
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -24,6 +30,9 @@ load_dotenv()
 sys.path.append(str(Path(__file__).parent))
 
 
+# ════════════════════════
+# CUSTOM CSS 
+# ════════════════════════
 
 def load_css():
     script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -71,39 +80,74 @@ def init_session_state():
 
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_resource(show_spinner=True)
 def initialize_rag():
+    progress_text = st.empty()
+    progress_bar = st.progress(0)
+    
     try:
+        # Step 1: LLM Load
+        progress_text.text("🤖 LLM initializing...")
+        progress_bar.progress(15)
         llm = Config.get_llm()
 
-        doc_processor = DocumentProcessor(
-            chunk_size=Config.CHUNK_SIZE,
-            chunk_overlap=Config.CHUNK_OVERLAP
-        )
-        
-        documents = doc_processor.process_documents(
-            urls=Config.DEFAULT_URLS,
-            data_folder="data"
-        )
-
+        # Step 2: Vector Store Connect (No documents yet)
+        progress_text.text("🔌 Vector Store connecting...")
+        progress_bar.progress(30)
         vector_store = VectorStore(
             url=Config.QDRANT_URL,
             api_key=Config.QDRANT_API_KEY,
             collection_name=Config.QDRANT_COLLECTION_NAME
         )
-     
-        vector_store.create_vectorstore(documents)
 
+       
+        if vector_store.collection_exists() and vector_store.has_documents():
+            progress_text.text("📦 Existing data found! Loading index...")
+            progress_bar.progress(50)
+            vector_store.load_existing()  # 👈 CONNECTION INITIALIZE
+            doc_count = vector_store.get_document_count()
+            progress_bar.progress(70)
+        else:
+           
+            progress_text.text("📄 Processing documents (first time only)...")
+            progress_bar.progress(40)
+            
+            doc_processor = DocumentProcessor(
+                chunk_size=Config.CHUNK_SIZE,
+                chunk_overlap=Config.CHUNK_OVERLAP
+            )
+            documents = doc_processor.process_documents(
+                urls=Config.DEFAULT_URLS,
+                data_folder="data"
+            )
+            
+            progress_text.text(f"🧠 Indexing {len(documents)} chunks...")
+            progress_bar.progress(60)
+            vector_store.create_vectorstore(documents)
+            doc_count = len(documents)
+
+        # Step 3: Graph Build
+        progress_text.text("🔗 Building RAG Graph...")
+        progress_bar.progress(85)
         graph_builder = GraphBuilder(
             retriever=vector_store.get_retriever(),
             llm=llm
         )
         graph_builder.build()
-
-        return graph_builder, len(documents)
+        
+        # Cleanup
+        progress_bar.empty()
+        progress_text.empty()
+        
+        # Return document count
+        doc_count = vector_store.get_document_count() if hasattr(vector_store, 'get_document_count') else 0
+        return graph_builder, doc_count
 
     except Exception as e:
-        st.error(f"Failed to initialize: {str(e)}")
+        progress_bar.empty()
+        progress_text.empty()
+        st.error(f"❌ Initialization failed: {str(e)}")
+        st.exception(e)  # Full traceback dikhane ke liye
         return None, 0
 
 
