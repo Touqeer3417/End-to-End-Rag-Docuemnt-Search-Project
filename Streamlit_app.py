@@ -11,17 +11,16 @@ from src.graph_builder.graph_builder import GraphBuilder
 from langsmith import wrappers
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
+os.environ["USER_AGENT"] = "Touqeer-RAG-App/1.0" 
 
-# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════
 # NEW IMPORTS FOR PDF LOADING
-# ═══════════════════════════════════════════════════════════════
+# ═══════════════════════════
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 load_dotenv() 
 
-
-os.environ["USER_AGENT"] = "Touqeer-RAG-App/1.0"
 sys.path.append(str(Path(__file__).parent))
 
 
@@ -76,38 +75,23 @@ def init_session_state():
 def initialize_rag():
     try:
         llm = Config.get_llm()
+
         doc_processor = DocumentProcessor(
             chunk_size=Config.CHUNK_SIZE,
             chunk_overlap=Config.CHUNK_OVERLAP
         )
-        vector_store = VectorStore()
         
-        # ─── Process URLs ───
-        urls = Config.DEFAULT_URLS
-        documents = doc_processor.process_urls(urls)
-        
-        # ═══════════════════════════════════════════════════════════════
-        # NEW: LOAD PDF FROM data FOLDER
-        # ═══════════════════════════════════════════════════════════════
-        pdf_path = Path("data/attention.pdf")
-        if pdf_path.exists():
-            # Load PDF pages
-            pdf_loader = PyPDFLoader(str(pdf_path))
-            pdf_docs = pdf_loader.load()
-            
-            # Chunk PDF using same config parameters
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=Config.CHUNK_SIZE,
-                chunk_overlap=Config.CHUNK_OVERLAP
-            )
-            pdf_chunks = text_splitter.split_documents(pdf_docs)
-            
-            # Merge with URL documents
-            documents.extend(pdf_chunks)
-        else:
-            st.warning("⚠️ data/attention.pdf not found! Skipping PDF ingestion.")
-        
-        # Create vector store with combined documents
+        documents = doc_processor.process_documents(
+            urls=Config.DEFAULT_URLS,
+            data_folder="data"
+        )
+
+        vector_store = VectorStore(
+            url=Config.QDRANT_URL,
+            api_key=Config.QDRANT_API_KEY,
+            collection_name=Config.QDRANT_COLLECTION_NAME
+        )
+     
         vector_store.create_vectorstore(documents)
 
         graph_builder = GraphBuilder(
@@ -117,10 +101,10 @@ def initialize_rag():
         graph_builder.build()
 
         return graph_builder, len(documents)
+
     except Exception as e:
         st.error(f"Failed to initialize: {str(e)}")
         return None, 0
-
 
 
 def render_particles():

@@ -16,6 +16,10 @@ class Config:
     TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")  # For evaluation judge
 
+    QDRANT_URL: str = os.getenv("QDRANT_URL", "")
+    QDRANT_API_KEY: str = os.getenv("QDRANT_API_KEY", "")
+    QDRANT_COLLECTION_NAME: str = "documents"
+
     # LLM Models
     LLM_MODEL = "groq:llama-3.3-70b-versatile"
     JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4o-mini")  # Evaluation ke liye

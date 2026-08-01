@@ -1,0 +1,53 @@
+# Prompt
+
+I want you to act as a senior software engineer and technical writer.
+
+I will provide my project's source code and folder structure one file at a time. Before writing the README, analyze the entire project carefully to fully understand its architecture, workflow, technologies, and implementation details.
+
+## Instructions
+
+* Do **not** generate the README until you have analyzed all the project files.
+* After analyzing everything, create a **professional, modern, and GitHub-ready README.md**.
+* Write in clear, concise, and polished English.
+* Do not make assumptions. If something is unclear, ask me.
+
+## The README should include:
+
+1. Project Title
+2. Short Description
+3. Features
+4. Tech Stack
+5. Architecture Overview
+6. Project Structure (tree format)
+7. Installation
+8. Environment Variables (.env example)
+9. Configuration
+10. Usage
+11. API Endpoints (if applicable)
+12. Workflow / How the System Works
+13. Code Architecture Explanation
+15. Screenshots (placeholders if not provided)
+16. Error Handling
+17. Performance Optimizations
+18. Limitations
+19. Future Improvements
+20. Dependencies
+23. License
+24. Author
+
+## Additional Requirements
+
+* Use professional Markdown formatting.
+* Add badges (Python, LangChain, FastAPI, Streamlit, Docker, etc.) where applicable.
+* Include emojis sparingly to improve readability.
+* Add syntax-highlighted code blocks.
+* Generate an accurate project structure tree.
+* Explain the architecture with Mermaid diagrams whenever useful.
+* Include API request/response examples if the project exposes APIs.
+* Include commands for setup and running the project.
+* Explain each major module and its responsibility.
+* Highlight design decisions and best practices used in the project.
+* Optimize the README so it looks attractive to recruiters, hiring managers, internship reviewers, and GitHub visitors.
+* Follow GitHub README best practices.
+* Ensure the final README is production-quality and ready to publish without further editing.
+

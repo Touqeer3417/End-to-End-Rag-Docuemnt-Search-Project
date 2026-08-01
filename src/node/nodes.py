@@ -13,8 +13,9 @@ from src.config.config import Config
 
 logger = logging.getLogger(__name__)
 
-GRADE_WORKERS = 5          # parallel grading threads
+GRADE_WORKERS = 5
 WEB_SEARCH_MAX_RESULTS = 3
+
 
 
 class GradeDocuments(BaseModel):

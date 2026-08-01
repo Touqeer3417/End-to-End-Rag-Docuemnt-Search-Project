@@ -14,3 +14,6 @@ wikipedia
 langchain-groq
 langchain-tavily
 langsmith
+langchain-qdrant
+qdrant-client
+pyperclip
