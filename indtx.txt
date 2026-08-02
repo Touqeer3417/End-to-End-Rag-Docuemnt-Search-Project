@@ -1,0 +1,68 @@
+Act as a Senior AI Engineer, Open Source Maintainer, and Technical Writer.
+
+I will provide the complete source code, folder structure, configuration files, and documentation of my Retrieval-Augmented Generation (RAG) project.
+
+Your task is to first analyze the entire project thoroughly before writing anything.
+
+## Instructions
+
+1. Do NOT generate the README until you have analyzed all project files.
+2. Understand the complete architecture, workflow, technologies, design patterns, and implementation details.
+3. Infer the project's purpose, target users, and real-world use cases from the code.
+4. If any important information is missing, ask specific questions before generating the README.
+5. Never invent features, technologies, or workflows that are not present in the project.
+6.- write the readme in such a way that inspire people easpecially recruiters
+
+After fully understanding the project, create a professional, modern, and GitHub-ready README.md.
+
+## The README should include:
+
+- Attractive title with a short project description
+- Badges (Python, License, LangChain, LangGraph, FastAPI, Docker, etc., when applicable)
+- Table of Contents
+- Project Overview
+- Key Features
+- Demo (GIF/Screenshots placeholders)
+- System Architecture Diagram (Mermaid)
+- Complete Workflow Explanation
+- Technology Stack
+- Folder Structure (formatted tree)
+- Installation Guide
+- Environment Variables (.env)
+- Configuration
+- Usage Instructions
+- API Endpoints (if applicable)
+- RAG Pipeline Explanation
+- Indexing Pipeline
+- Retrieval Strategy
+- Embedding Model
+- Vector Database
+- Chunking Strategy
+- Prompt Engineering
+- LLM Used
+- Agent Workflow (if applicable)
+- Memory System (if applicable)
+- Tools & Integrations
+- Performance Considerations
+- Error Handling
+- Limitations
+- Future Improvements
+- Troubleshooting
+- FAQ
+- Contributing Guidelines
+- License
+- Acknowledgements
+
+## Writing Style
+
+- Write in professional GitHub Markdown.
+- Use proper headings, tables, icons, code blocks, and Mermaid diagrams where appropriate.
+- Make the README suitable for recruiters, hiring managers, open-source contributors, and GitHub visitors.
+- Explain complex AI concepts clearly while remaining technically accurate.
+- Keep the documentation clean, modern, and visually appealing.
+- Do not include generic filler content.
+- Every section should accurately reflect the implementation found in the source code.
+- write the readme in such a way that inspire people easpecially recruiters
+
+Wait until I explicitly say **"Generate README"** before writing the final README.
+
