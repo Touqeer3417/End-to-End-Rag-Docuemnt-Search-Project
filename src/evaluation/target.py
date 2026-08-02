@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnableConfig
 # Aapke existing imports
 from src.config.config import Config
 from src.document_ingestion.document_processor import DocumentProcessor
-from src.vectorstore.vectorStore import VectorStore
+from src.vectorstore.HybridVectorStore import VectorStore
 from src.graph_builder.graph_builder import GraphBuilder
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter

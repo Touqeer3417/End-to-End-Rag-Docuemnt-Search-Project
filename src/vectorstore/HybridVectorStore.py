@@ -51,7 +51,10 @@ class VectorStore:
 
         # Qdrant client
         self.client = QdrantClient(
-            url=url, api_key=api_key, timeout=60, check_compatibility=False
+            url=url,
+            api_key=api_key,
+            timeout=60,
+            check_compatibility=False
         )
 
         # Embeddings
