@@ -1,233 +1,285 @@
-"""Vector store with hybrid search (dense + BM25) and reranking."""
+"""Qdrant vector store using OpenAI embeddings."""
 
 from __future__ import annotations
 
 import logging
-import os
 from typing import List, Optional
 
 from langchain_core.documents import Document
-from langchain_qdrant import FastEmbedSparse, QdrantVectorStore, RetrievalMode
-from qdrant_client import QdrantClient, models
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_huggingface import HuggingFaceEmbeddings
+
+from langchain_openai import OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore, RetrievalMode
+
+from qdrant_client import QdrantClient, models
+
+from src.config.config import Config
+
 
 logger = logging.getLogger(__name__)
 
 
-class _RerankRetriever(BaseRetriever):
-    """LangChain-compatible retriever wrapper."""
-    store: "VectorStore"
-
-    def _get_relevant_documents(
-        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
-    ) -> List[Document]:
-        return self.store.retrieve(query)
-
-
 class VectorStore:
-    """Hybrid (dense + sparse) Qdrant vector store with optional reranking."""
-   
-    SPARSE_MODEL = "Qdrant/bm25"
-    DENSE_NAME = "dense"
-    SPARSE_NAME = "sparse"
+    """
+    Qdrant vector store using OpenAI embeddings.
 
-    DENSE_MODEL = "BAAI/bge-m3"
-    DENSE_SIZE = 1024      
+    No HuggingFace.
+    No BGE.
+    No SentenceTransformers.
+    No local reranker.
+    """
+
+    DENSE_NAME = "dense"
 
     def __init__(
         self,
         url: str,
         api_key: Optional[str] = None,
-        collection_name: str = "documents",
+        collection_name: str = "documents_openai",
         top_k: int = 4,
-        fetch_k: int = 20,
-        use_reranker: bool = True,
+        fetch_k: int = 10,
+        use_reranker: bool = False,
     ) -> None:
+
         self.collection_name = collection_name
         self.top_k = top_k
-        self.fetch_k = max(fetch_k, top_k)
+        self.fetch_k = fetch_k
 
-        # Qdrant client
+        # =========================
+        # QDRANT CLIENT
+        # =========================
         self.client = QdrantClient(
             url=url,
             api_key=api_key,
             timeout=60,
-            check_compatibility=False
+            check_compatibility=False,
         )
 
-        # Embeddings
-        self.dense = HuggingFaceEmbeddings(
-            model_name=self.DENSE_MODEL,
-            model_kwargs={'device': 'cpu'},
-            encode_kwargs={'normalize_embeddings': True}
+        # =========================
+        # OPENAI EMBEDDINGS
+        # =========================
+        self.dense = OpenAIEmbeddings(
+            model=Config.EMBEDDING_MODEL,
+            dimensions=Config.EMBEDDING_DIMENSIONS,
+            api_key=Config.OPENAI_API_KEY,
         )
-        self.sparse = FastEmbedSparse(model_name=self.SPARSE_MODEL)
 
-        # Reranker
-        self.reranker = self._load_reranker() if use_reranker else None
-
-        # Internal state
         self.vectorstore: Optional[QdrantVectorStore] = None
         self.retriever: Optional[BaseRetriever] = None
 
-    # ==================== PUBLIC API ====================
+    # ============================================================
+    # PUBLIC METHODS
+    # ============================================================
 
     def collection_exists(self) -> bool:
-        """Check karo ke Qdrant mein collection already hai ya nahi"""
+        """Check whether Qdrant collection exists."""
+
         try:
-            collections = self.client.get_collections().collections
-            return any(c.name == self.collection_name for c in collections)
+            return self.client.collection_exists(
+                self.collection_name
+            )
+
         except Exception as e:
-            logger.error(f"Error checking collection: {e}")
+            logger.error(
+                "Error checking collection: %s",
+                e
+            )
             return False
 
     def has_documents(self) -> bool:
-        """Check karo ke collection mein data hai ya nahi"""
+        """Check whether collection contains vectors."""
+
         try:
             if not self.collection_exists():
                 return False
-            info = self.client.get_collection(self.collection_name)
-            return info.points_count > 0
+
+            info = self.client.get_collection(
+                self.collection_name
+            )
+
+            return (info.points_count or 0) > 0
+
         except Exception as e:
-            logger.error(f"Error checking documents: {e}")
+            logger.error(
+                "Error checking documents: %s",
+                e
+            )
             return False
 
     def get_document_count(self) -> int:
-        """Kitne documents indexed hain"""
+        """Return number of vectors stored."""
+
         try:
             if not self.collection_exists():
                 return 0
-            info = self.client.get_collection(self.collection_name)
-            return info.points_count
+
+            info = self.client.get_collection(
+                self.collection_name
+            )
+
+            return info.points_count or 0
+
         except Exception as e:
-            logger.error(f"Error getting count: {e}")
+            logger.error(
+                "Error getting document count: %s",
+                e
+            )
             return 0
 
     def create_vectorstore(
-        self, documents: List[Document], force: bool = False  # 👈 Default False
+        self,
+        documents: List[Document],
+        force: bool = False,
     ) -> None:
-        """
-        Collection create karo (agar nahi hai), documents index karo,
-        aur retriever setup karo.
-        """
+        """Create collection and index documents."""
+
         if not documents:
-            raise ValueError("Documents list khali hai!")
+            raise ValueError(
+                "Documents list is empty."
+            )
 
-        self._ensure_collection(recreate=force)
+        self._ensure_collection(
+            recreate=force
+        )
 
-        # Documents add karo
-        self.vectorstore.add_documents(documents)
-        
-        # Retriever ready karo
-        self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": self.top_k})
-        
-        logger.info("Indexed %d documents into '%s'", len(documents), self.collection_name)
+        logger.info(
+            "Creating OpenAI embeddings for %d chunks...",
+            len(documents),
+        )
 
-    def retrieve(self, query: str, k: Optional[int] = None) -> List[Document]:
+        self.vectorstore.add_documents(
+            documents
+        )
+
+        self.retriever = (
+            self.vectorstore.as_retriever(
+                search_kwargs={
+                    "k": self.top_k
+                }
+            )
+        )
+
+        logger.info(
+            "Indexed %d chunks into collection '%s'",
+            len(documents),
+            self.collection_name,
+        )
+
+    def retrieve(
+        self,
+        query: str,
+        k: Optional[int] = None,
+    ) -> List[Document]:
+        """Retrieve semantically relevant documents."""
+
         self._check_ready()
+
         k = k or self.top_k
-        fetch = self.fetch_k if self.reranker else k
 
-        docs = self.vectorstore.similarity_search(query=query, k=fetch)
-
-        if self.reranker:
-            docs = self._rerank(query, docs, k)
+        docs = self.vectorstore.similarity_search(
+            query=query,
+            k=k,
+        )
 
         return docs
 
     def get_retriever(self) -> BaseRetriever:
+        """Return LangChain retriever."""
+
         self._check_ready()
+
         if self.retriever is None:
-            self.retriever = _RerankRetriever(store=self)
+            self.retriever = (
+                self.vectorstore.as_retriever(
+                    search_kwargs={
+                        "k": self.top_k
+                    }
+                )
+            )
+
         return self.retriever
 
     def load_existing(self) -> None:
-        self._ensure_collection(recreate=False)
-        logger.info("Connected to existing collection '%s'", self.collection_name)
-                
-      
+        """Connect to existing OpenAI-embedding collection."""
 
-    # ==================== INTERNALS ====================
+        self._ensure_collection(
+            recreate=False
+        )
 
-    def _ensure_collection(self, recreate: bool) -> None:
-        exists = self.client.collection_exists(self.collection_name)
+        self.retriever = (
+            self.vectorstore.as_retriever(
+                search_kwargs={
+                    "k": self.top_k
+                }
+            )
+        )
+
+        logger.info(
+            "Connected to existing collection '%s'",
+            self.collection_name,
+        )
+
+    # ============================================================
+    # INTERNAL METHODS
+    # ============================================================
+
+    def _ensure_collection(
+        self,
+        recreate: bool = False,
+    ) -> None:
+
+        exists = self.client.collection_exists(
+            self.collection_name
+        )
 
         if exists and recreate:
-            self.client.delete_collection(self.collection_name)
+
+            self.client.delete_collection(
+                collection_name=self.collection_name
+            )
+
             exists = False
-            logger.info("Old collection '%s' deleted", self.collection_name)
+
+            logger.info(
+                "Deleted old collection '%s'",
+                self.collection_name,
+            )
 
         if not exists:
+
             self.client.create_collection(
                 collection_name=self.collection_name,
+
                 vectors_config={
                     self.DENSE_NAME: models.VectorParams(
-                        size=self.DENSE_SIZE, distance=models.Distance.COSINE
-                    )
-                },
-                sparse_vectors_config={
-                    self.SPARSE_NAME: models.SparseVectorParams(
-                        modifier=models.Modifier.IDF
+                        size=Config.EMBEDDING_DIMENSIONS,
+                        distance=models.Distance.COSINE,
                     )
                 },
             )
-            logger.info("Created collection '%s'", self.collection_name)
 
+            logger.info(
+                "Created OpenAI vector collection '%s'",
+                self.collection_name,
+            )
+
+        # Connect LangChain to Qdrant
         self.vectorstore = QdrantVectorStore(
             client=self.client,
+
             collection_name=self.collection_name,
+
             embedding=self.dense,
-            sparse_embedding=self.sparse,
-            retrieval_mode=RetrievalMode.HYBRID,
+
+            retrieval_mode=RetrievalMode.DENSE,
+
             vector_name=self.DENSE_NAME,
-            sparse_vector_name=self.SPARSE_NAME,
         )
 
-    def _load_reranker(self):
-        if os.getenv("COHERE_API_KEY"):
-            try:
-                import cohere
-                client = cohere.Client(os.environ["COHERE_API_KEY"])
-                logger.info("Reranker: Cohere")
-                return ("cohere", client)
-            except Exception as exc:
-                logger.warning("Cohere init failed (%s); falling back", exc)
-
-        try:
-            from sentence_transformers import CrossEncoder
-            model = CrossEncoder("BAAI/bge-reranker-base")
-            logger.info("Reranker: BGE cross-encoder")
-            return ("cross_encoder", model)
-        except ImportError:
-            logger.warning("No reranker available")
-            return None
-
-    def _rerank(self, query: str, docs: List[Document], k: int) -> List[Document]:
-        if not docs:
-            return docs
-
-        kind, model = self.reranker
-
-        try:
-            if kind == "cohere":
-                res = model.rerank(
-                    model="rerank-english-v3.0",
-                    query=query,
-                    documents=[d.page_content for d in docs],
-                    top_n=len(docs),
-                )
-                return [docs[r.index] for r in res.results[:k]]
-
-            scores = model.predict([(query, d.page_content) for d in docs])
-            ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
-            return [d for d, _ in ranked[:k]]
-
-        except Exception:
-            logger.exception("Rerank failed; returning fused order")
-            return docs[:k]
-
     def _check_ready(self) -> None:
+
         if self.vectorstore is None:
-            raise ValueError("Vector store not initialized. Pehle `create_vectorstore(documents)` call karo.")
+            raise ValueError(
+                "Vector store is not initialized. "
+                "Call create_vectorstore() or load_existing() first."
+            )

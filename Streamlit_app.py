@@ -1,312 +1,1033 @@
 import os
-import streamlit as st
-from pathlib import Path
 import sys
 import time
+import html
+import textwrap
+from pathlib import Path
 from datetime import datetime
-from src.config.config import Config
-from src.document_ingestion.document_processor import DocumentProcessor
-# from src.vectorstore.vectorStore import VectorStore
-from src.vectorstore.HybridVectorStore import VectorStore
-from src.graph_builder.graph_builder import GraphBuilder
-from langsmith import wrappers
+
+import streamlit as st
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
-os.environ["USER_AGENT"] = "my-rag-app/1.0"
-from dotenv import load_dotenv
+
+from src.config.config import Config
+from src.document_ingestion.document_processor import DocumentProcessor
+from src.vectorstore.HybridVectorStore import VectorStore
+from src.graph_builder.graph_builder import GraphBuilder
+
+
+# ============================================================
+# ENVIRONMENT SETUP
+# ============================================================
+
 load_dotenv()
-HF_TOKEN = os.getenv("HF_TOKEN")
+
+os.environ["USER_AGENT"] = "ai-document-intelligence/1.0"
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
 
 
-# ═══════════════════════════
-# NEW IMPORTS FOR PDF LOADING
-# ═══════════════════════════
-
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-load_dotenv() 
-
-sys.path.append(str(Path(__file__).parent))
-
-
-# ════════════════════════
-# CUSTOM CSS 
-# ════════════════════════
-
-def load_css():
-    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    possible_paths = [
-        script_dir / "assets" / "style.css",      # Same folder
-        script_dir / "style.css",                  # Root mein
-        script_dir / ".." / "assets" / "style.css", # Parent folder
-        Path("assets") / "style.css",               # CWD se
-        Path(os.getcwd()) / "assets" / "style.css", # Absolute CWD
-    ]
-    
-    for path in possible_paths:
-        if path.resolve().exists():
-            css_content = path.read_text(encoding="utf-8")
-            st.markdown(f"<style>{css_content}</style>", unsafe_allow_html=True)
-            return
-    
-    st.warning("⚠️ CSS file not found! Make sure 'assets/style.css' exists.")
-
-
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 
 st.set_page_config(
-    page_title=" AI Document Intelligence",
+    page_title="AI Document Intelligence",
     page_icon="🧠",
-    layout="centered",
-    initial_sidebar_state="collapsed"
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
-# Load external CSS
+
+# ============================================================
+# HTML HELPERS
+# ============================================================
+
+def clean_html(content: str) -> str:
+    """
+    Convert multiline indented HTML into one continuous line.
+
+    This prevents Streamlit Markdown from treating nested,
+    indented HTML as a Markdown code block.
+    """
+
+    if not content:
+        return ""
+
+    dedented = textwrap.dedent(content)
+
+    return "".join(
+        line.strip()
+        for line in dedented.splitlines()
+        if line.strip()
+    )
+
+
+def render_html(content: str) -> None:
+    """
+    Safely render custom HTML in Streamlit.
+    """
+
+    st.markdown(
+        clean_html(content),
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# LOAD CUSTOM CSS
+# ============================================================
+
+def load_css() -> None:
+
+    possible_paths = [
+        PROJECT_ROOT / "assets" / "style.css",
+        PROJECT_ROOT / "style.css",
+        Path("assets") / "style.css",
+    ]
+
+    for css_path in possible_paths:
+
+        if css_path.exists():
+
+            css = css_path.read_text(
+                encoding="utf-8"
+            )
+
+            st.markdown(
+                f"<style>{css}</style>",
+                unsafe_allow_html=True,
+            )
+
+            return
+
+    st.warning(
+        "⚠️ CSS file not found. "
+        "Expected: assets/style.css"
+    )
+
+
 load_css()
 
 
-# ═══════════════════════════════════════════════════════════════
+# ============================================================
 # SESSION STATE
-# ═══════════════════════════════════════════════════════════════
-def init_session_state():
-    if 'rag_system' not in st.session_state:
-        st.session_state.rag_system = None
-    if 'initialized' not in st.session_state:
-        st.session_state.initialized = False
-    if 'history' not in st.session_state:
-        st.session_state.history = []
-    if 'total_chunks' not in st.session_state:
-        st.session_state.total_chunks = 0
+# ============================================================
+
+def init_session_state() -> None:
+
+    default_values = {
+
+        "rag_system": None,
+
+        "initialized": False,
+
+        "history": [],
+
+        "total_chunks": 0,
+
+        "last_question": "",
+
+        "last_answer": "",
+
+        "last_response_time": 0.0,
+    }
+
+    for key, default_value in default_values.items():
+
+        if key not in st.session_state:
+
+            st.session_state[key] = (
+                default_value
+            )
 
 
+# ============================================================
+# INITIALIZE RAG SYSTEM
+# ============================================================
 
-@st.cache_resource(show_spinner=True)
+@st.cache_resource(show_spinner=False)
 def initialize_rag():
-    progress_text = st.empty()
-    progress_bar = st.progress(0)
-    
-    try:
-        # Step 1: LLM Load
-        progress_text.text("🤖 LLM initializing...")
-        progress_bar.progress(15)
-        llm = Config.get_llm()
 
-        # Step 2: Vector Store Connect (No documents yet)
-        progress_text.text("🔌 Vector Store connecting...")
-        progress_bar.progress(30)
-        vector_store = VectorStore(
-            url=Config.QDRANT_URL,
-            api_key=Config.QDRANT_API_KEY,
-            collection_name=Config.QDRANT_COLLECTION_NAME
+    # --------------------------------------------------------
+    # 1. LLM
+    # --------------------------------------------------------
+
+    llm = Config.get_llm()
+
+    # --------------------------------------------------------
+    # 2. VECTOR STORE
+    # --------------------------------------------------------
+
+    vector_store = VectorStore(
+        url=Config.QDRANT_URL,
+        api_key=Config.QDRANT_API_KEY,
+        collection_name=Config.QDRANT_COLLECTION_NAME,
+    )
+
+    # --------------------------------------------------------
+    # 3. LOAD EXISTING DATA
+    # --------------------------------------------------------
+
+    if (
+        vector_store.collection_exists()
+        and vector_store.has_documents()
+    ):
+
+        vector_store.load_existing()
+
+    # --------------------------------------------------------
+    # 4. FIRST-TIME INDEXING
+    # --------------------------------------------------------
+
+    else:
+
+        document_processor = DocumentProcessor(
+            chunk_size=Config.CHUNK_SIZE,
+            chunk_overlap=Config.CHUNK_OVERLAP,
         )
 
-       
-        if vector_store.collection_exists() and vector_store.has_documents():
-            progress_text.text("📦 Existing data found! Loading index...")
-            progress_bar.progress(50)
-            vector_store.load_existing()  # 👈 CONNECTION INITIALIZE
-            doc_count = vector_store.get_document_count()
-            progress_bar.progress(70)
-        else:
-           
-            progress_text.text("📄 Processing documents (first time only)...")
-            progress_bar.progress(40)
-            
-            doc_processor = DocumentProcessor(
-                chunk_size=Config.CHUNK_SIZE,
-                chunk_overlap=Config.CHUNK_OVERLAP
-            )
-            documents = doc_processor.process_documents(
+        documents = (
+            document_processor.process_documents(
                 urls=Config.DEFAULT_URLS,
-                data_folder="data"
+                data_folder="data",
             )
-            
-            progress_text.text(f"🧠 Indexing {len(documents)} chunks...")
-            progress_bar.progress(60)
-            vector_store.create_vectorstore(documents)
-            doc_count = len(documents)
-
-        # Step 3: Graph Build
-        progress_text.text("🔗 Building RAG Graph...")
-        progress_bar.progress(85)
-        graph_builder = GraphBuilder(
-            retriever=vector_store.get_retriever(),
-            llm=llm
         )
-        graph_builder.build()
-        
-        # Cleanup
-        progress_bar.empty()
-        progress_text.empty()
-        
-        # Return document count
-        doc_count = vector_store.get_document_count() if hasattr(vector_store, 'get_document_count') else 0
-        return graph_builder, doc_count
 
-    except Exception as e:
-        progress_bar.empty()
-        progress_text.empty()
-        st.error(f"❌ Initialization failed: {str(e)}")
-        st.exception(e)  # Full traceback dikhane ke liye
-        return None, 0
+        if not documents:
 
+            raise ValueError(
+                "No documents were loaded for indexing."
+            )
 
-def render_particles():
-    particles_html = ""
-    for i in range(20):
-        left = (i * 5.3) % 100
-        top = (i * 7.7) % 100
-        delay = (i * 0.4) % 6
-        duration = 5 + (i % 5)
-        size = 2 + (i % 4)
-        opacity = 0.2 + (i % 3) * 0.15
-        particles_html += f'''
-            <div class="particle" style="
-                left:{left}%;
-                top:{top}%;
-                width:{size}px;
-                height:{size}px;
-                animation-delay:{delay}s;
-                animation-duration:{duration}s;
-                opacity:{opacity};
-                animation: float {duration}s ease-in-out infinite;
-            "></div>
-        '''
-    st.markdown(particles_html, unsafe_allow_html=True)
+        vector_store.create_vectorstore(
+            documents
+        )
+
+    # --------------------------------------------------------
+    # 5. DOCUMENT COUNT
+    # --------------------------------------------------------
+
+    doc_count = (
+        vector_store.get_document_count()
+    )
+
+    # --------------------------------------------------------
+    # 6. BUILD RAG GRAPH
+    # --------------------------------------------------------
+
+    graph_builder = GraphBuilder(
+        retriever=vector_store.get_retriever(),
+        llm=llm,
+    )
+
+    graph_builder.build()
+
+    return graph_builder, doc_count
 
 
-# ═══════════════════════════════════════════════════════════════
-# MAIN APP
-# ═══════════════════════════════════════════════════════════════
-def main():
-    init_session_state()
-    render_particles()
+# ============================================================
+# PARTICLES
+# ============================================================
 
-    # ─── Hero Section ───
-    st.markdown("""
-        <div class="hero-container">
-            <div class="hero-emoji">🧠</div>
-            <div class="hero-title">Intelligent Document Intelligence Engine </div>
-          
+def render_particles() -> None:
+
+    particle_elements = []
+
+    for i in range(22):
+
+        left = (i * 7.1) % 100
+
+        top = (i * 11.3) % 100
+
+        delay = (i * 0.35) % 8
+
+        duration = 7 + (i % 6)
+
+        size = 2 + (i % 3)
+
+        particle_elements.append(
+
+            (
+                '<span class="particle" '
+                f'style="left:{left}%;'
+                f'top:{top}%;'
+                f'width:{size}px;'
+                f'height:{size}px;'
+                f'animation-delay:{delay}s;'
+                f'animation-duration:{duration}s;">'
+                '</span>'
+            )
+        )
+
+    particles_html = (
+        '<div class="particle-layer">'
+        + "".join(particle_elements)
+        + "</div>"
+    )
+
+    st.markdown(
+        particles_html,
+        unsafe_allow_html=True,
+    )
+
+
+# ============================================================
+# STREAM CONTENT NORMALIZATION
+# ============================================================
+
+def chunk_to_text(content) -> str:
+
+    if content is None:
+
+        return ""
+
+    if isinstance(content, str):
+
+        return content
+
+    if isinstance(content, list):
+
+        parts = []
+
+        for item in content:
+
+            if isinstance(item, str):
+
+                parts.append(item)
+
+            elif isinstance(item, dict):
+
+                text_value = item.get("text")
+
+                if text_value:
+
+                    parts.append(
+                        str(text_value)
+                    )
+
+        return "".join(parts)
+
+    return str(content)
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+def render_header() -> None:
+
+    if st.session_state.initialized:
+
+        status_text = "Ready"
+
+        status_class = "ready"
+
+    else:
+
+        status_text = "Starting"
+
+        status_class = "starting"
+
+    render_html(
+        f"""
+        <div class="app-header">
+
+            <div class="brand-area">
+
+                <div class="brand-icon">
+                    🧠
+                </div>
+
+                <div class="brand-copy">
+
+                    <div class="brand-title">
+                        AI Document Intelligence
+                    </div>
+
+                    <div class="brand-description">
+                        Search, understand and reason across your documents
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div class="engine-pill">
+
+                <span class="status-dot {status_class}"></span>
+
+                <span>
+                    {status_text}
+                </span>
+
+            </div>
+
         </div>
-    """, unsafe_allow_html=True)
+        """
+    )
 
-    # ─── Initialize ───
-    if not st.session_state.initialized:
-        with st.spinner("⚡ Initializing Neural Engine..."):
-            rag_system, num_chunks = initialize_rag()
-            if rag_system:
-                st.session_state.rag_system = rag_system
-                st.session_state.total_chunks = num_chunks
-                st.session_state.initialized = True
-                st.success(f"🚀 Engine Ready — {num_chunks:,} document chunks indexed")
-                time.sleep(0.5)
-                st.rerun()
 
-    st.markdown('<div class="fancy-divider"></div>', unsafe_allow_html=True)
+# ============================================================
+# INTRO SECTION
+# ============================================================
 
-    # ─── Search Form ───
-    with st.form("search_form", clear_on_submit=False):
-        question = st.text_input(
-            "Ask a Question  ",
-            placeholder="Ask anything about your documents...",
-            label_visibility="collapsed"
+def render_intro() -> None:
+
+    render_html(
+        """
+        <div class="workspace-intro">
+
+            <div class="intro-eyebrow">
+                AI KNOWLEDGE WORKSPACE
+            </div>
+
+            <h1 class="workspace-title">
+                Ask your documents.
+                <span>
+                    Get intelligent answers.
+                </span>
+            </h1>
+
+            <p class="workspace-description">
+                Search your indexed knowledge using AI-powered
+                semantic retrieval and intelligent reasoning.
+            </p>
+
+        </div>
+        """
+    )
+
+
+# ============================================================
+# STARTUP UI
+# ============================================================
+
+def render_startup(message: str) -> None:
+
+    safe_message = html.escape(message)
+
+    render_html(
+        f"""
+        <div class="startup-card">
+
+            <div class="startup-spinner"></div>
+
+            <div>
+
+                <div class="startup-title">
+                    Starting AI Engine
+                </div>
+
+                <div class="startup-subtitle">
+                    {safe_message}
+                </div>
+
+            </div>
+
+        </div>
+        """
+    )
+
+
+# ============================================================
+# ANSWER HEADER
+# ============================================================
+
+def render_answer_header() -> None:
+
+    render_html(
+        """
+        <div class="answer-heading-row">
+
+            <div>
+
+                <div class="answer-eyebrow">
+                    AI RESPONSE
+                </div>
+
+                <div class="answer-heading">
+
+                    <span class="sparkle-icon">
+                        ✦
+                    </span>
+
+                    Generated Answer
+
+                </div>
+
+            </div>
+
+            <div class="completed-pill">
+
+                <span></span>
+
+                Completed
+
+            </div>
+
+        </div>
+        """
+    )
+
+
+# ============================================================
+# RESPONSE METRICS
+# ============================================================
+
+def render_response_metrics(
+    response_time: float,
+) -> None:
+
+    total_chunks = (
+        st.session_state.total_chunks
+    )
+
+    render_html(
+        f"""
+        <div class="response-metrics">
+
+         
+
+
+        </div>
+        """
+    )
+
+
+# ============================================================
+# RECENT SEARCHES
+# ============================================================
+
+def render_recent_searches() -> None:
+
+    if not st.session_state.history:
+
+        return
+
+    render_html(
+        """
+        <div class="recent-section-heading">
+
+            <div class="recent-eyebrow">
+                YOUR ACTIVITY
+            </div>
+
+            <div class="recent-title">
+                Recent Searches
+            </div>
+
+        </div>
+        """
+    )
+
+    recent_items = list(
+        reversed(
+            st.session_state.history[-3:]
         )
-        submit = st.form_submit_button("🔍 Search Documents")
+    )
 
-    # ─── Process Search ───
-    if submit and question and st.session_state.rag_system:
-        start_time = time.time()
+    columns = st.columns(
+        len(recent_items),
+        gap="medium",
+    )
+
+    for column, item in zip(
+        columns,
+        recent_items,
+    ):
+
+        safe_question = html.escape(
+            item["question"]
+        )
+
+        timestamp = html.escape(
+            item.get(
+                "timestamp",
+                "Now",
+            )
+        )
+
+        with column:
+
+            render_html(
+                f"""
+                <div class="recent-search-card">
+
+                    <div class="recent-card-top">
+
+                        <span class="recent-icon">
+                            ↗
+                        </span>
+
+                        <span class="recent-time">
+                            {timestamp}
+                        </span>
+
+                    </div>
+
+                    <div class="recent-question">
+                        {safe_question}
+                    </div>
+
+                    <div class="recent-card-footer">
+
+                        <span>
+                            AI Search
+                        </span>
+
+                        <span class="recent-speed">
+                            ⚡ {item["time"]:.2f}s
+                        </span>
+
+                    </div>
+
+                </div>
+                """
+            )
+
+    empty_col, clear_col = st.columns(
+        [6, 1]
+    )
+
+    with clear_col:
+
+        if st.button(
+            "Clear history",
+            key="clear_history",
+            use_container_width=True,
+        ):
+
+            st.session_state.history = []
+
+            st.session_state.last_question = ""
+
+            st.session_state.last_answer = ""
+
+            st.session_state.last_response_time = 0.0
+
+            st.rerun()
+
+
+# ============================================================
+# EMPTY STATE
+# ============================================================
+
+def render_empty_state() -> None:
+
+    render_html(
+        """
+        <div class="empty-workspace">
+
+            <div class="empty-visual">
+                ✦
+            </div>
+
+            <div class="empty-heading">
+                Your knowledge is ready
+            </div>
+
+            <div class="empty-description">
+                Ask a question above to begin exploring
+                your indexed documents.
+            </div>
+
+        </div>
+        """
+    )
+
+
+# ============================================================
+# RUN QUERY
+# ============================================================
+
+def run_query(
+    question: str,
+) -> None:
+
+    start_time = time.time()
+
+    answer_text = ""
+
+    # Store latest question
+    st.session_state.last_question = (
+        question
+    )
+
+    # --------------------------------------------------------
+    # ANSWER CONTAINER
+    # --------------------------------------------------------
+
+    with st.container(
+        key="answer_panel"
+    ):
+
+        render_answer_header()
+
         answer_placeholder = st.empty()
-        answer_text = ""
+
+        # ----------------------------------------------------
+        # RUN CONFIG
+        # ----------------------------------------------------
 
         run_config = RunnableConfig(
+
             metadata={
-                "environment": "production",
-                "app_version": "1.0.0",
-                "user_id": st.session_state.get("user_id", "anonymous"),
-                "session_id": st.session_state.get("session_id", "default"),
+
+                "environment":
+                    "production",
+
+                "app_version":
+                    "2.0.0",
+
+                "user_id":
+                    st.session_state.get(
+                        "user_id",
+                        "anonymous",
+                    ),
+
+                "session_id":
+                    st.session_state.get(
+                        "session_id",
+                        "default",
+                    ),
             }
         )
 
-        # Streaming answer
-        for msg_chunk, metadata in st.session_state.rag_system.stream(question, config=run_config):
-            if metadata.get("langgraph_node") == "responder":
-                token = msg_chunk.content
-                if token:
-                    answer_text += token
-                    answer_placeholder.markdown(f"""
-                        <div class="answer-wrapper">
-                            <div class="answer-header">
-                                <span class="answer-icon">✨</span>
-                                <span class="answer-label">Generated Answer</span>
-                            </div>
-                            <div class="answer-text">{answer_text}▌</div>
+        # ----------------------------------------------------
+        # STREAM ANSWER
+        # ----------------------------------------------------
+
+        try:
+
+            response_stream = (
+                st.session_state
+                .rag_system
+                .stream(
+                    question,
+                    config=run_config,
+                )
+            )
+
+            for (
+                message_chunk,
+                metadata,
+            ) in response_stream:
+
+                node_name = (
+                    metadata.get(
+                        "langgraph_node"
+                    )
+                )
+
+                if node_name != "responder":
+
+                    continue
+
+                token = chunk_to_text(
+                    getattr(
+                        message_chunk,
+                        "content",
+                        "",
+                    )
+                )
+
+                if not token:
+
+                    continue
+
+                answer_text += token
+
+                # Render Markdown normally.
+                # Do NOT use unsafe HTML here.
+                answer_placeholder.markdown(
+                    answer_text + " ▌"
+                )
+
+        except Exception as exc:
+
+            st.error(
+                f"❌ Search failed: {str(exc)}"
+            )
+
+            return
+
+        # ----------------------------------------------------
+        # FINISHED
+        # ----------------------------------------------------
+
+        elapsed_time = (
+            time.time()
+            - start_time
+        )
+
+        if not answer_text.strip():
+
+            answer_text = (
+                "No answer was generated. "
+                "Please try another question."
+            )
+
+        answer_placeholder.markdown(
+            answer_text
+        )
+
+        render_response_metrics(
+            elapsed_time
+        )
+
+    # --------------------------------------------------------
+    # SAVE LATEST RESPONSE
+    # --------------------------------------------------------
+
+    st.session_state.last_answer = (
+        answer_text
+    )
+
+    st.session_state.last_response_time = (
+        elapsed_time
+    )
+
+    # --------------------------------------------------------
+    # HISTORY
+    # --------------------------------------------------------
+
+    st.session_state.history.append(
+
+        {
+
+            "question":
+                question,
+
+            "answer":
+                answer_text,
+
+            "time":
+                elapsed_time,
+
+            "timestamp":
+                datetime.now().strftime(
+                    "%H:%M"
+                ),
+        }
+    )
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+def main() -> None:
+
+    init_session_state()
+
+    # Background particles
+    render_particles()
+
+    # --------------------------------------------------------
+    # HEADER
+    # --------------------------------------------------------
+
+    render_header()
+
+    # --------------------------------------------------------
+    # INITIALIZE SYSTEM
+    # --------------------------------------------------------
+
+    if not st.session_state.initialized:
+
+        startup_placeholder = (
+            st.empty()
+        )
+
+        startup_placeholder.markdown(
+            clean_html(
+                """
+                <div class="startup-card">
+
+                    <div class="startup-spinner"></div>
+
+                    <div>
+
+                        <div class="startup-title">
+                            Starting AI Engine
                         </div>
-                    """, unsafe_allow_html=True)
 
-        elapsed_time = time.time() - start_time
+                        <div class="startup-subtitle">
+                            Connecting to your knowledge base...
+                        </div>
 
-        # Final answer with meta
-        answer_placeholder.markdown(f"""
-            <div class="answer-wrapper">
-                <div class="answer-header">
-                    <span class="answer-icon">✨</span>
-                    <span class="answer-label">Generated Answer</span>
-                </div>
-                <div class="answer-text">{answer_text}</div>
-                <div class="meta-bar">
-                    <div class="meta-time">⏱️ Generated in {elapsed_time:.2f}s</div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Save to history
-        st.session_state.history.append({
-            'question': question,
-            'answer': answer_text,
-            'time': elapsed_time,
-            'timestamp': datetime.now().strftime("%H:%M")
-        })
-
-    elif submit and not st.session_state.rag_system:
-        st.error("⚠️ System not initialized. Please refresh the page.")
-
-    # ─── History Section ───
-    if st.session_state.history:
-        st.markdown('<div class="fancy-divider"></div>', unsafe_allow_html=True)
-
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown('<div class="history-title">📜 Recent Queries</div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown('<div style="text-align:right;">', unsafe_allow_html=True)
-            if st.button("🗑️ Clear", key="clear_history", help="Clear all history"):
-                st.session_state.history = []
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        for item in reversed(st.session_state.history[-5:]):
-            st.markdown(f"""
-                <div class="history-card">
-                    <div class="history-question">❓ {item['question']}</div>
-                    <div class="history-answer">{item['answer']}</div>
-                    <div class="history-footer">
-                        <div class="history-time">🕐 {item.get('timestamp', 'Now')}</div>
-                        <div class="history-speed">⚡ {item['time']:.2f}s</div>
                     </div>
+
                 </div>
-            """, unsafe_allow_html=True)
+                """
+            ),
+            unsafe_allow_html=True,
+        )
 
-    else:
-        # Empty state
-        st.markdown("""
-            <div class="empty-state">
-                <div class="empty-icon">🔮</div>
-                <div class="empty-text">Your search history will appear here</div>
-            </div>
-        """, unsafe_allow_html=True)
+        try:
 
+            rag_system, num_chunks = (
+                initialize_rag()
+            )
+
+        except Exception as exc:
+
+            startup_placeholder.empty()
+
+            st.error(
+                f"❌ Initialization failed: {str(exc)}"
+            )
+
+            st.exception(exc)
+
+            return
+
+        startup_placeholder.empty()
+
+        if rag_system is None:
+
+            st.error(
+                "RAG system could not be initialized."
+            )
+
+            return
+
+        st.session_state.rag_system = (
+            rag_system
+        )
+
+        st.session_state.total_chunks = (
+            num_chunks
+        )
+
+        st.session_state.initialized = True
+
+        # Required so header changes:
+        # Starting -> Ready
+        st.rerun()
+
+    # --------------------------------------------------------
+    # INTRO
+    # --------------------------------------------------------
+
+    render_intro()
+
+    # --------------------------------------------------------
+    # SEARCH FORM
+    # --------------------------------------------------------
+
+    with st.form(
+        "search_form",
+        clear_on_submit=False,
+    ):
+
+        input_column, button_column = (
+            st.columns(
+                [6.5, 1.35],
+                vertical_alignment="bottom",
+                gap="small",
+            )
+        )
+
+        with input_column:
+
+            question = st.text_input(
+
+                "Search your knowledge",
+
+                placeholder=(
+                    "Ask anything about "
+                    "your documents..."
+                ),
+
+                label_visibility="collapsed",
+            )
+
+        with button_column:
+
+            submitted = (
+                st.form_submit_button(
+                    "Search  →",
+                    use_container_width=True,
+                )
+            )
+
+    # --------------------------------------------------------
+    # NEW SEARCH
+    # --------------------------------------------------------
+
+    if submitted:
+
+        clean_question = (
+            question.strip()
+        )
+
+        if not clean_question:
+
+            st.warning(
+                "⚠️ Please enter a question first."
+            )
+
+        elif not st.session_state.rag_system:
+
+            st.error(
+                "❌ AI engine is not initialized."
+            )
+
+        else:
+
+            run_query(
+                clean_question
+            )
+
+    # --------------------------------------------------------
+    # KEEP LAST ANSWER VISIBLE AFTER RERUN
+    # --------------------------------------------------------
+
+    elif st.session_state.last_answer:
+
+        with st.container(
+            key="answer_panel"
+        ):
+
+            render_answer_header()
+
+            st.markdown(
+                st.session_state.last_answer
+            )
+
+            render_response_metrics(
+                st.session_state
+                .last_response_time
+            )
+
+    # --------------------------------------------------------
+    # RECENT SEARCHES
+    # --------------------------------------------------------
+
+    render_recent_searches()
+
+    # --------------------------------------------------------
+    # EMPTY STATE
+    # --------------------------------------------------------
+
+    if (
+        st.session_state.initialized
+        and not st.session_state.last_answer
+        and not st.session_state.history
+    ):
+
+        render_empty_state()
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
 
 if __name__ == "__main__":
+
     main()
