@@ -1,24 +1,28 @@
-langchain
-langchain-openai
-langchain-community
-langgraph
-
-openai
-
-pydantic
-python-dotenv
-
-beautifulsoup4
-requests
-
+# Core application
 streamlit
-pypdf
-wikipedia
+python-dotenv
+pydantic
 
+# LangChain / LangGraph
+langchain
+langchain-core
+langchain-community
+langchain-text-splitters
+langchain-openai
+langgraph
 langchain-tavily
 langsmith
 
-langchain-qdrant
-qdrant-client
+# Local persistent vector database (replaces Qdrant Cloud)
+chromadb
+langchain-chroma
 
+# Document ingestion and utilities
+pypdf
+beautifulsoup4
+requests
+wikipedia
 pyperclip
+
+# OpenAI SDK used by LangChain integrations
+openai

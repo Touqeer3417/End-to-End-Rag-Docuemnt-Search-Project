@@ -163,9 +163,8 @@ def initialize_rag():
     # --------------------------------------------------------
 
     vector_store = VectorStore(
-        url=Config.QDRANT_URL,
-        api_key=Config.QDRANT_API_KEY,
-        collection_name=Config.QDRANT_COLLECTION_NAME,
+        collection_name=Config.CHROMA_COLLECTION_NAME,
+        persist_directory=Config.CHROMA_PERSIST_DIRECTORY,
     )
 
     # --------------------------------------------------------

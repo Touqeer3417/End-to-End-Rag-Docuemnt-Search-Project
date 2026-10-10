@@ -1,4 +1,8 @@
 .env
+# Local ChromaDB data; do not commit generated embeddings/documents
+.chroma_db/
+chroma_db/
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -8,4 +12,7 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+
+# Auto-created safety backups from database migration
+.chromadb_migration_backup_*/
